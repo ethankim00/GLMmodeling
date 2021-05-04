@@ -7,6 +7,9 @@ output:
     df_print: paged
 ---
 
+<center> Ethan Kim, Albert Mao</center>
+
+
 # Introduction
 
 The American Statistical Association (ASA) is the world’s largest community of statisticians founded in 1839. The goal of the association is to promote statistics through meetings, publications, education, and membership services. One service the ASA offers is sections - subgroups that members can be a part of. This report utilizes the 2020 members data. The goal of the project is to provide a model to predict the probability that an ASA member was in at least one section and provide a thorough interpretation of the predictors. 
@@ -220,10 +223,7 @@ full_probit <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age +
 sum((predict(full_probit) > 0.5) == data$AnySection)/length(data$AnySection)
 ```
 
-
-
-
-```{r echo=FALSE, results='hide'}
+```{r echo=FALSE, results='hide', warning=FALSE}
 cloglog = function(x) log(-log(1-x))
 full_cloglog <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age + AgeJoinedASA + Gender + EmploymentCategory + InChapter + subsection + Age.na + AgeJoinedASA.na, data = data, family = binomial(link = cloglog))
 ```
@@ -231,7 +231,10 @@ full_cloglog <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age 
 ```{r echo=FALSE, results='hide'}
 sum((predict(full_cloglog) > 0.5) == data$AnySection)/length(data$AnySection)
 ```
-We test empircally whether the choice of link function for our binary resopnse model can improve results. The standard logistic regression model uses the logit link function. However, other link functions can be used. The difference is how the latent variable is a linear combination of the predictors is transformed into the response variable. We test the probit and complementary log-log link functions based on the full set of predictor variables. Both of the novel link functions give a lower accuracy and thus we stick with the basic logit link function for subsequent models and analysis. 
+We test empircally whether the choice of link function for our binary resopnse model can improve results. The standard logistic regression model uses the logit link function. However, other link functions can be used. The difference is how the latent variable is a linear combination of the predictors is transformed into the response variable. 
+TODO: - Add some detail about why one link function might be preferred. 
+
+We test the probit and complementary log-log link functions based on the full set of predictor variables. Both of the novel link functions give a lower accuracy and thus we stick with the basic logit link function for subsequent models and analysis. 
 
 ```{r, echo=FALSE}
 library(knitr)
@@ -243,10 +246,30 @@ kable(results)
 ## Likelihood Ratio Test
 
 
-To avoid overfitting, we want to determine whether to include predictors in our model in a principled way. Simply including all predictors may yield suboptimal results because addtional predictors can cause better fit the training data even if they woulld not provide addtional predictive value when applied to new data. One way to alleviate this would be to use a train-test split and evaluate model performance on the test set. Another method is to use a Likelihood Ratio Test to determine whether the 
+To avoid overfitting, we want to determine whether to include predictors in our model in a principled way. Simply including all predictors may yield suboptimal results because addtional predictors can cause better fit the training data even if they woulld not provide addtional predictive value when applied to new data. The fundamental problem is variable selecteion.One way to alleviate this would be to use a train-test split and evaluate model performance on the test set. Other methods would be to use Partial Least Squares or Lasso regression. The method used in this course is to use a stepwise method Likelihood Ratio Test to determine whether the new predictor gives enough of an improvement in model fit to justify its inclusion. A new predictor is included only if it increases the likelihood of the model by a certain threshold. The forward stepwise selection is a greedy algorithm that at each step includes the predictor that gives the best improvement in the likelihood of the model and stops when the increase in likelihood falls below a significance threshold. 
+
+```{r}
+help("fastbw")
+```
 
 
-### Exploring Interactions
+```{r}
+# Run LRT starting with null model
+# Because number of predictors is large should find some principled way of doing this
+library(rms)
+lrm.full <- rms::lrm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age + AgeJoinedASA + Gender + EmploymentCategory + InChapter + subsection + Age.na + AgeJoinedASA.na, data = data)
+fastbw(lrm.full, rule = "p", sls = 0.05)
+```
+
+```{r}
+# Refit with selected predictors
+
+# Evaluate accuracy
+```
+
+
+
+## Exploring Interactions
 
 
 ## Diagnostics
@@ -262,9 +285,7 @@ To avoid overfitting, we want to determine whether to include predictors in our 
 ### Hosmer Lemeshow Test
 
 
-```{r}
-table(data$EmploymentCategory)
-```
+
 
 
 
@@ -272,8 +293,28 @@ table(data$EmploymentCategory)
 
 # Other modeling Approaches
 - CART
+  - Might be harder to intepret the coefficients
+  
 
 
 # Results
 
-Cross validated accuracy on classification problem 
+- present best model
+- Put interpretation of coefficients here
+  - Example odds ratios for different groups
+- Put some conclusions and recommendations about what the ASA might do to drive engagement. 
+  - Age and Gender + industry could be interesting 
+
+
+# Conclusions
+
+- describe model that performed the best
+- describe conclustions on what drives ASA participation
+- emphasize importance of data cleaning and preprocessing
+  - Need to make sure missing values are dealt with
+  - need to make sure assumptions are close to satisfied. 
+
+
+
+
+
