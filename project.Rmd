@@ -1,0 +1,279 @@
+---
+title: "Stat 149 Final Project"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+
+# Introduction
+
+The American Statistical Association (ASA) is the world’s largest community of statisticians founded in 1839. The goal of the association is to promote statistics through meetings, publications, education, and membership services. One service the ASA offers is sections - subgroups that members can be a part of. This report utilizes the 2020 members data. The goal of the project is to provide a model to predict the probability that an ASA member was in at least one section and provide a thorough interpretation of the predictors. 
+
+
+The importance of the project is twofold: 1) to improve ASA member experience by promoting groups to members who are likely to join one and 2) to help improve diversity and underrepresentation in certain groups. The former will help more members become involved in the ASA community and the latter will help improve equity in the statistics field - certain groups like women (the ASA is predominantly male) may be underrepresented in sections and, if this is the case, the ASA should enact policies to change this. 
+
+
+# Exploratory Analysis
+
+The dataset involves 37 variables. The response variable is “AnySection'' which is “Yes” if a member is in at least one section and “No” otherwise. The data has 17594 rows and has both quantitative and categorical variables. Quantitative variables include JSMtot, the number of joint statistical meetings the member went to between 2015 and 2019 and age. Qualitative variables include employment category (one of six different categories) and gender (male vs female). 
+
+The average number of JSMtot meetings that a member went to between 2015 and 2019 was ~1, the average age is 48.47, and the average age one joined ASA is 32.67. 52% of the participants are in a section and 64% are male. The data for JSMtot, age, and age joined ASA are all right skewed. It seems that there is a big spike of people joining the ASA after college (ages 20-30). Finally, a large part of the organization is young, and involvement declines as participants age. 
+
+
+```{r echo=FALSE}
+library(ggplot2)
+source("na-convert.R")
+```
+
+
+```{r echo = FALSE, results='hide'}
+data <- read.csv("data/member-data-2020-stat149.csv")
+head(data)
+```
+```{r echo = FALSE, results='hide'}
+summary(data)
+```
+```{r echo = FALSE, results='hide'}
+table(data$Gender)
+```
+
+
+```{r echo = FALSE, results='hide'}
+table(data$AnySection)
+```
+Slightly more than half of participants attended any section. 
+
+```{r echo = FALSE, fig.show='hide'}
+hist(data$JSMtot)
+```
+```{r echo = FALSE, fig.show='hide'}
+hist(data$Age)
+```
+```{r echo = FALSE, fig.show='hide'}
+hist(data$AgeJoinedASA)
+```
+
+```{r echo = FALSE, results='hide'}
+# Convert section and subsection values to 0 or 1 
+# Return whether a variable is one of the subsections
+isSection <- function(var){
+  if (substring(var, 1, 1) == "P"){
+    return(TRUE)
+  }
+  else
+  {
+    return(FALSE)  
+  }
+}
+
+# Convert yes/no values in a column to 1/0
+to_binary <- function(col){
+  return((as.numeric(as.factor(col)) - 1))
+}
+
+section_columns = numeric(0)
+data$AnySection <- to_binary(data$AnySection)
+for (i in c(1: length(colnames(data)))){
+  col <- colnames(data)[i]
+  if (isSection(col)){
+    data[,i] <- to_binary(data[,i])
+    section_columns <- c(section_columns, col)
+  }
+}
+
+# Create a new variable storing the number of previous sections a member has been a part of 
+data$numSections <- rowSums(data[, section_columns])
+```
+
+
+```{r echo=FALSE, results='hide'}
+mean(data$numSections)
+```
+
+
+```{r echo=FALSE, results='hide'}
+table(data$EmploymentCategory)
+```
+```{r echo=FALSE, results='hide'}
+table(data$InChapter)
+```
+
+## Preprocessing
+
+### Transformations
+
+The dataset contains 27 binary indicators of membership in different ASA subsections. However, this data is quite sparse with only an average of 0.16 sections attended per person. To transform the subsection data into a more useful quantitative predictor, we decided to sum up the total number of subsections attended. The histogram of the resulting `numSections` variable is shown below:
+
+```{r echo=FALSE}
+# Might be better off converting into a binary variable. 
+
+# TODO rewrite with ggplot
+hist(data$numSections)
+```
+
+Since the number of people attending 1 or more subsection is very small, we then decided to convert this into a binary variable `subsection`. This variable is true if a person attended one or more subsections and false if they attended no subsections. Overall 1069 members attended at least one subsection.
+
+```{r echo = FALSE, results='hide'}
+data$subsection <- (data$numSections > 0)
+```
+
+
+```{r echo = FALSE, results='hide'}
+sum(data$subsection)
+```
+
+
+### Missing Data Imputation
+
+```{r echo = FALSE, results='hide'}
+sum(is.na.data.frame(data))
+```
+
+```{r echo = FALSE, results='hide'}
+colSums(is.na(data))
+```
+There are a total of 13,861 missing values in the dataset. The missing values are primarily in the following predictors. Age with 3399, AgeJoinedASA with 3400, Gender with 2834 and EmploymentCategory with 4216. In addition, a very small number (12) observations are missing from the USA.CAN predictor. To deal with the missing values we can either remove this observations or use mean imputation techniques. 
+
+```{r echo=FALSE}
+# TODO rewrite with ggplot 
+data$numMissing <- rowSums(is.na(data))
+ggplot(data, aes(x=numMissing)) + geom_histogram(aes(y=stat(count/sum(count))),fill = "darkblue", bins = 4)  + xlab("Number of Missing Values") + ylab("Density") + ggtitle("Missing Value Distribution")+  guides(size = FALSE)
+```
+
+This histogram shows deviation from missingness at random. If varaibles where missing independently we would expect the counts of missing values per operation to be closer to a binomial or poisson distribution. However on the chart, we can see a unexpectedly high number of observations with 4 missing values. This indicates that some observations are more likely to have multiple missing predictors. If we remove the observations with four missing values we are much closer to the expected poisson distribution. Therefore we will subset our data to individuals with fewer than 4 missing observations. 
+
+
+```{r echo=FALSE}
+#print(sum(data$numMissing >3))
+data <- data[data$numMissing < 4,] # Remove observations with greater than 4 missing values
+# Figure out poisson lambda parameter
+lambda <- sum(is.na(data))/length(data$AnySection)
+poisdata = data.frame(x = c(0, 1, 2, 3))
+poisdata$y = dpois(poisdata$x, lambda)
+ggplot(data, aes(x=numMissing)) + geom_histogram(aes(y=stat(count/sum(count))),fill = "darkblue", bins = 4) + geom_point(data = poisdata, aes(x, y, color = "red", size = 10)) + xlab("Number of Missing Values") + ylab("Density") + ggtitle("Missing Value Distribution")+  guides(size = FALSE) + labs(colour = "Pois Distribution")
+```
+
+
+2358 observations were removed based on this criterion. After removing these observations we can see that the counts of missing values much more closely matches those expected based on a poisson distribution. Therefore we can assume that missing values occur more at random and use imputation techniques to deal with them. For quantitative variables we can use mean imputations and create an additional binary variable indicating missingness of these factors. We use this method for the Age and AgeJoinedASA predictors. For categorical variables we can create an additional categorical level for missing values. We use this method for the EmploymentCategory and Gender predictors. In addition, since there are only 2 missing values for the USA.CAN predictor, we simply remove these observations. These transformations of missing values were achieved using the na.create.mean function. The mean imputed mean value for Age was 48.46 while the imputed mean value for AgeJoinedASA was 32.67.
+
+Overall, our final dataset consists of 15234 observations. After combining some predictors and adding indicators of missingness, we are left with 12 quantitative predictors which can be used to predict the binary outcome variable. Of these predictors, 3 are quantitative, 7 are binary and 2 are categorical. 
+
+
+
+```{r echo = FALSE, results='hide'}
+# Replace NA with an "unknown category"
+data$Gender[is.na(data$Gender)] <- "Unkown"
+data$EmploymentCategory[is.na(data$EmploymentCategory)] <- "Unkown"
+# Remove 2 observations for this predictor
+data <- data[!is.na(data$USA.CAN),]
+# Convert remaining NA using mean imputation
+data <- na.convert.mean(data)
+colnames(data)
+```
+
+
+```{r echo=FALSE, results='hide'}
+length(data$AnySection)
+```
+
+# Modeling
+
+The modeling probelm presented is fundamentally a binary response problem. The target variable is anySection. We can use a broad class of models to predict this binary response based on the available predictors. The output variable can be modeled as a Bernoulli random variable since the only possible values are 0 and 1. Different types of Generalized Linear Models can be used to predict the outcome variable. Our initial modeling approach focused on using logistic regression to predict the outcome. 
+
+## Baseline Models
+
+We can fit baseline models in order to evaluate the improvements given by subsequent modeling approaches. Because it is fundamentally a binary classification problem, accuracy is an easily interpretable way to evaluate and compare models. 
+
+
+```{r echo=FALSE}
+null <- glm(AnySection ~ 1, data = data, family = "binomial")
+```
+```{r echo=FALSE, results='hide' }
+sum((predict(null) > 0.5) == data$AnySection)/length(data$AnySection)
+```
+```{r echo=FALSE, results='hide'}
+table(data$AnySection)
+```
+```{r echo=FALSE, results='hide'}
+8664/ (6570 +  8664)
+```
+
+The null logistic regression model with a logit link function gives an accuracy of 0.431. This is worse than the heuristic of simply picking the majority class (attended section) which gives an accuracy of 0.568. The baseline model linearly incorporating the 12 chosen predictors achieves in accuracy of 0.686622. Significantly above the null and heuristic models. 
+
+```{r echo=FALSE, results='hide'}
+full <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age + AgeJoinedASA + Gender + EmploymentCategory + InChapter + subsection + Age.na + AgeJoinedASA.na, data = data, family = "binomial")
+```
+```{r echo=FALSE, results='hide'}
+sum((predict(full) > 0.5) == data$AnySection)/length(data$AnySection)
+```
+
+## Link Functions
+
+
+```{r echo=FALSE, results='hide'}
+
+full_probit <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age + AgeJoinedASA + Gender + EmploymentCategory + InChapter + subsection + Age.na + AgeJoinedASA.na, data = data, family = binomial(link = "probit"))
+```
+```{r echo=FALSE, results='hide'}
+sum((predict(full_probit) > 0.5) == data$AnySection)/length(data$AnySection)
+```
+
+
+
+
+```{r echo=FALSE, results='hide'}
+cloglog = function(x) log(-log(1-x))
+full_cloglog <- glm(AnySection ~ JSMtot + USA.CAN + DontPublish + MEMTYPE + Age + AgeJoinedASA + Gender + EmploymentCategory + InChapter + subsection + Age.na + AgeJoinedASA.na, data = data, family = binomial(link = cloglog))
+```
+
+```{r echo=FALSE, results='hide'}
+sum((predict(full_cloglog) > 0.5) == data$AnySection)/length(data$AnySection)
+```
+We test empircally whether the choice of link function for our binary resopnse model can improve results. The standard logistic regression model uses the logit link function. However, other link functions can be used. The difference is how the latent variable is a linear combination of the predictors is transformed into the response variable. We test the probit and complementary log-log link functions based on the full set of predictor variables. Both of the novel link functions give a lower accuracy and thus we stick with the basic logit link function for subsequent models and analysis. 
+
+```{r, echo=FALSE}
+library(knitr)
+results = data.frame(Link = c("Logit", "Probit", "cloglog"))
+results$Accuracy = c(0.687, 0.659, 0.547)
+kable(results)
+```
+
+## Likelihood Ratio Test
+
+
+To avoid overfitting, we want to determine whether to include predictors in our model in a principled way. Simply including all predictors may yield suboptimal results because addtional predictors can cause better fit the training data even if they woulld not provide addtional predictive value when applied to new data. One way to alleviate this would be to use a train-test split and evaluate model performance on the test set. Another method is to use a Likelihood Ratio Test to determine whether the 
+
+
+### Exploring Interactions
+
+
+## Diagnostics
+
+
+
+### Residuals
+
+
+### Cooks Distance
+
+
+### Hosmer Lemeshow Test
+
+
+```{r}
+table(data$EmploymentCategory)
+```
+
+
+
+#  Next steps
+
+# Other modeling Approaches
+- CART
+
+
+# Results
+
+Cross validated accuracy on classification problem 
